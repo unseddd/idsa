@@ -263,7 +263,11 @@ impl DsaPrivateKey {
     }
 
     /// INSECURE Return the secret nonce `k` with the signature as part of Cryptopals challenge #43
-    pub fn sign_insecure(&self, message: &[u8], rng: &mut ThreadRng) -> Result<(BigUint, BigUint, BigUint), Error> {
+    pub fn sign_insecure(
+        &self,
+        message: &[u8],
+        rng: &mut ThreadRng,
+    ) -> Result<(BigUint, BigUint, BigUint), Error> {
         let zero = BigUint::from(0_u8);
         loop {
             let (k, k_inv) = self.generate_secret_nonce(rng)?;
@@ -283,6 +287,24 @@ impl DsaPrivateKey {
             };
             return Ok((r, s, k));
         }
+    }
+
+    /// INSECURE Sign the message with the provided secret nonce `k` as part of Cryptopals challenge #43
+    pub fn sign_with_k_insecure(
+        &self,
+        message: &[u8],
+        k: &BigUint,
+    ) -> Result<(BigUint, BigUint), Error> {
+        let k_inv = k.invmod(&self.q);
+        // r = (g**k mod p) mod q
+        let r = self.g.modpow(&k, &self.p).mod_floor(&self.q);
+        // z = the leftmost min(N, outlen) bits of Hash(M)
+        let z_len = core::cmp::min(self.q.bits() / 8, sha256::DIGEST_LEN as u64);
+        let z_bytes = sha256::Sha256::digest(message).map_err(|_| Error::Invalid)?;
+        let z = BigUint::from_bytes_be(&z_bytes[..z_len as usize]);
+        // s = (k**-1(z + xr)) mod q
+        let s = (k_inv * (z + (&self.x * &r))).mod_floor(&self.q);
+        Ok((r, s))
     }
 
     /// Return the prime parameter `p`
