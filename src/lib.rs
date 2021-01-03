@@ -102,6 +102,39 @@ impl DsaPublicKey {
         //    specified in Section 3.3
         constant_compare(&v, &r)
     }
+    /// INSECURE Verify a signed message without checking parameter validity
+    pub fn verify_insecure(&self, message: &[u8], r: &BigUint, s: &BigUint) -> Result<(), Error> {
+        // 1. The verifier shall check that 0 < r' < q and 0 < s' < q;
+        // if either is violated, the signature shall be rejected as invalid
+        /* Don't need no stinking validity checks!
+        let zero = BigUint::from(0_u8);
+        if r == &zero || r >= &self.q || s == &zero || s >= &self.q {
+            return Err(Error::Invalid);
+        }
+        */
+        // 2. If the two conditions in step 1 are satisfied, the verifier computes the following:
+        // w = s'**-1 mod q
+        let w = s.invmod(&self.q);
+        // z = the leftmost min(N, outlen) bits of Hash(M')
+        let z_len = core::cmp::min(self.q.bits() / 8, sha256::DIGEST_LEN as u64);
+        let z_bytes = sha256::Sha256::digest(message).map_err(|_| Error::Invalid)?;
+        let z = BigUint::from_bytes_be(&z_bytes[..z_len as usize]);
+        // u1 = (zw) mod q
+        let u1 = (&z * &w).mod_floor(&self.q);
+        // u2 = ((r')w) mod q
+        let u2 = (r * &w).mod_floor(&self.q);
+        // v = ((g**u1 * y**u2) mod p) mod q
+        let v = (self.g.modpow(&u1, &self.p) * self.y.modpow(&u2, &self.p))
+            .mod_floor(&self.p)
+            .mod_floor(&self.q);
+        // 3. If v = r', then the signature is verified
+        //
+        // 4. If v does not equal r', any number of things could have gone wrong. The only thing
+        //    known is the signature is invalid.
+        // 5. Prior to accepting the signature as valid, the verifier shall have the assurances as
+        //    specified in Section 3.3
+        constant_compare(&v, &r)
+    }
 }
 
 /// Compare two BigUints in constant-time
