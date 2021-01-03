@@ -261,6 +261,49 @@ impl DsaPrivateKey {
             return Ok((r, s));
         }
     }
+
+    /// INSECURE Return the secret nonce `k` with the signature as part of Cryptopals challenge #43
+    pub fn sign_insecure(&self, message: &[u8], rng: &mut ThreadRng) -> Result<(BigUint, BigUint, BigUint), Error> {
+        let zero = BigUint::from(0_u8);
+        loop {
+            let (k, k_inv) = self.generate_secret_nonce(rng)?;
+            // r = (g**k mod p) mod q
+            let r = self.g.modpow(&k, &self.p).mod_floor(&self.q);
+            // z = the leftmost min(N, outlen) bits of Hash(M)
+            let z_len = core::cmp::min(self.q.bits() / 8, sha256::DIGEST_LEN as u64);
+            let z_bytes = sha256::Sha256::digest(message).map_err(|_| Error::Invalid)?;
+            let z = BigUint::from_bytes_be(&z_bytes[..z_len as usize]);
+            // s = (k**-1(z + xr)) mod q
+            let s = (k_inv * (z + (&self.x * &r))).mod_floor(&self.q);
+            // If either r = 0 or s = 0, a new value of k shall be generated, and the signature
+            // shall be recalculated. It is extremely unlikely that r=0 or s=0 if signatures are
+            // generated properly.
+            if r == zero || s == zero {
+                continue;
+            };
+            return Ok((r, s, k));
+        }
+    }
+
+    /// Return the prime parameter `p`
+    pub fn p(&self) -> &BigUint {
+        &self.p
+    }
+
+    /// Return the prime parameter `q`
+    pub fn q(&self) -> &BigUint {
+        &self.q
+    }
+
+    /// Return the generator parameter `g`
+    pub fn g(&self) -> &BigUint {
+        &self.g
+    }
+
+    /// INSECURE Return the secret key `x`, used for Cryptopals challenge #43
+    pub fn x(&self) -> &BigUint {
+        &self.x
+    }
 }
 
 fn check_dsa_ln(l: u32, n: u32) -> Result<(), Error> {
